@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ChildProfile {
+  id        String      @id @default(cuid())
+  name      String      @default("豆豆")
+  streak    Int         @default(0)
+  phaseWeek Int         @default(1)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  plans     DailyPlan[]
+}
+
+model LearningMaterial {
+  id           String           @id @default(cuid())
+  title        String
+  category     String // peppa | easy_conversations | little_fox | newsround | custom
+  description  String           @default("")
+  scriptText   String // full dialogue / transcript, lines separated by \n
+  audioPath    String? // https://...blob... or /uploads/xxx.mp3 (local)
+  videoPath    String?
+  levelTag     String           @default("") // L4-L5, week hint, etc.
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  vocabularies VocabularyItem[]
+  tasks        TaskItem[]
+}
+
+model VocabularyItem {
+  id         String           @id @default(cuid())
+  materialId String
+  material   LearningMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  word       String
+  meaning    String
+  phonetic   String           @default("")
+}
+
+model DailyPlan {
+  id          String       @id @default(cuid())
+  date        String // YYYY-MM-DD
+  phaseWeek   Int          @default(1)
+  childId     String
+  child       ChildProfile @relation(fields: [childId], references: [id], onDelete: Cascade)
+  forceOrder  Boolean      @default(true)
+  nightUnlock String       @default("18:00")
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  tasks       TaskItem[]
+
+  @@unique([childId, date])
+}
+
+model TaskItem {
+  id           String            @id @default(cuid())
+  planId       String
+  plan         DailyPlan         @relation(fields: [planId], references: [id], onDelete: Cascade)
+  type         String // PREVIEW | AI_LESSON | LISTENING_LADDER | NIGHT_SHADOW | BREAKFAST_REVIEW
+  sortOrder    Int
+  materialId   String?
+  material     LearningMaterial? @relation(fields: [materialId], references: [id], onDelete: SetNull)
+  durationMin  Int               @default(5)
+  status       String            @default("locked") // locked | available | in_progress | completed
+  progressJson String            @default("{}") // stage progress, plays, etc.
+  required     Boolean           @default(true)
+  unlockAfter  String? // HH:mm for night shadow
+  scheduledFor String? // for breakfast review display date
+  completedAt  DateTime?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  sessions     LearningSession[]
+}
+
+model LearningSession {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      TaskItem @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  stage     String // preview | read_aloud | retell | qa | listen | shadow | breakfast
+  payload   String   @default("{}") // feedback, score, transcript
+  createdAt DateTime @default(now())
+}

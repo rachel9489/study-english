@@ -1,0 +1,17 @@
+{
+  "name": "Study English 每日英语教练",
+  "short_name": "StudyEnglish",
+  "start_url": "/child",
+  "display": "standalone",
+  "background_color": "#e8f4f8",
+  "theme_color": "#0e7c86",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
