@@ -57,12 +57,13 @@ export function AudioOrTtsPlayer({
   async function play() {
     onPlayStart?.();
     stopPlayback();
-    const useFile = audioPath && audioRef.current;
+    const audio = audioRef.current;
+    const useFile = audioPath && audio;
     if (useFile) {
-      audioRef.current.currentTime = 0;
+      audio.currentTime = 0;
       setPlaying(true);
       try {
-        await audioRef.current.play();
+        await audio.play();
       } catch {
         setPlaying(false);
       }

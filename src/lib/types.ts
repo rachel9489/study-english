@@ -89,6 +89,13 @@ export const TASK_LABELS: Record<TaskType, string> = {
   BREAKFAST_REVIEW: "早餐巩固",
 };
 
+export function getTaskLabel(type: string) {
+  if ((TASK_TYPES as readonly string[]).includes(type)) {
+    return TASK_LABELS[type as TaskType];
+  }
+  return type;
+}
+
 export const DEFAULT_DURATIONS: Record<TaskType, number> = {
   PREVIEW: 5,
   AI_LESSON: 25,

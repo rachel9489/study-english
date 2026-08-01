@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { fetchChildToday, getCachedChildToday, type ChildTodayData, type ChildTodayTask } from "@/lib/child-today-cache";
 import { DAY_STUDY_START, isDayStudyStarted } from "@/lib/dates";
-import { TASK_LABELS } from "@/lib/types";
+import { getTaskLabel } from "@/lib/types";
 
 type Task = ChildTodayTask;
 
@@ -164,7 +164,7 @@ export default function ChildHomePage() {
 
         {current && (
           <Link href={`/child/task/${current.id}`} className="btn btn-accent mt-6 w-full text-xl">
-            继续学习 · {TASK_LABELS[current.type]}
+            继续学习 · {getTaskLabel(current.type)}
           </Link>
         )}
       </section>
@@ -203,12 +203,12 @@ export default function ChildHomePage() {
                       {task.status === "locked" &&
                       !studyStarted &&
                       task.type !== "BREAKFAST_REVIEW" &&
-                      data.plan.tasks.some((t) => t.id === task.id)
+                      data.plan?.tasks.some((t) => t.id === task.id)
                         ? ` · ${DAY_STUDY_START} 后开始`
                         : ""}
                     </p>
                     <h3 className="text-xl font-extrabold">
-                      {index + 1}. {TASK_LABELS[task.type]}（{task.durationMin}分钟）
+                      {index + 1}. {getTaskLabel(task.type)}（{task.durationMin}分钟）
                     </h3>
                     <p className="text-[var(--ink-soft)]">{task.material?.title}</p>
                   </div>
