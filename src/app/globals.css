@@ -177,7 +177,17 @@ select {
   border-radius: 16px;
   border: 1px solid transparent;
   background: rgba(255, 255, 255, 0.7);
+}
+
+.line-chip.clickable {
   cursor: pointer;
+}
+
+.line-chip-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
 }
 
 .line-chip.active {
@@ -191,9 +201,294 @@ select {
   background: rgba(47, 158, 107, 0.08);
 }
 
+.line-chip.recording {
+  border-color: rgba(232, 93, 74, 0.55);
+  background: rgba(232, 93, 74, 0.08);
+  animation: pulse-soft 1.2s ease-in-out infinite;
+}
+
+.word-reading {
+  background: rgba(255, 209, 102, 0.65);
+  border-radius: 6px;
+  padding: 0 0.15rem;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.script-panel {
+  border: 2px solid var(--line);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.92);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+.script-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+  background: rgba(14, 124, 134, 0.06);
+}
+
+.script-panel-head-icon {
+  width: 2rem;
+  height: 2rem;
+  color: var(--brand);
+  flex-shrink: 0;
+}
+
+.script-panel-body {
+  max-height: min(58vh, 560px);
+  overflow-y: auto;
+  padding: 0.85rem 1rem 1rem;
+}
+
+.script-panel-body-flat {
+  padding-top: 0.35rem;
+}
+
+.script-lines-document {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.script-doc-line {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.55rem 0.35rem 0.55rem 0.5rem;
+  border: none;
+  border-left: 3px solid transparent;
+  border-bottom: 1px solid rgba(14, 124, 134, 0.08);
+  background: transparent;
+  border-radius: 0;
+}
+
+.script-doc-line:last-child {
+  border-bottom: none;
+}
+
+.script-doc-line.clickable {
+  cursor: pointer;
+}
+
+.script-doc-line.active {
+  border-left-color: var(--brand);
+  background: rgba(14, 124, 134, 0.06);
+}
+
+.script-doc-line.done {
+  border-left-color: rgba(47, 158, 107, 0.5);
+}
+
+.script-doc-check {
+  color: var(--ok);
+  font-weight: 700;
+}
+
+.script-doc-text {
+  display: inline;
+  font-size: 1.12rem;
+  line-height: 1.75;
+}
+
+/* 孩子端：对话原文整体大一号 */
+.child-shell .script-doc-text {
+  font-size: 1.28rem;
+  line-height: 1.85;
+}
+
+.child-shell .line-chip {
+  font-size: 1.25rem;
+  line-height: 1.8;
+}
+
+.child-shell .line-chip .text-lg {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.child-shell .follow-recording-line {
+  font-size: 1.28rem;
+}
+
+.script-line-score {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--brand-deep);
+  background: rgba(14, 124, 134, 0.12);
+  vertical-align: middle;
+}
+
+.script-doc-line.recording {
+  border-left-color: rgba(232, 93, 74, 0.75);
+  background: rgba(232, 93, 74, 0.06);
+  animation: pulse-soft 1.2s ease-in-out infinite;
+}
+
+.script-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.script-toolbar-info {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--ink-soft);
+}
+
 .vocab-mark {
   color: var(--accent);
   text-decoration: underline dotted;
   cursor: pointer;
   font-weight: 700;
+}
+
+.follow-recording-panel {
+  border: 2px solid rgba(232, 93, 74, 0.45);
+  border-radius: 20px;
+  background: rgba(232, 93, 74, 0.07);
+  padding: 1rem 1.15rem;
+  animation: pulse-soft 1.4s ease-in-out infinite;
+}
+
+.follow-recording-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.follow-recording-mic {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.follow-recording-title {
+  font-weight: 800;
+  font-size: 1.1rem;
+}
+
+.follow-recording-timer {
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+}
+
+.follow-recording-line {
+  margin-top: 0.75rem;
+  font-size: 1.15rem;
+  line-height: 1.6;
+  font-style: italic;
+}
+
+.follow-recording-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.35rem;
+  height: 2rem;
+  margin-top: 0.85rem;
+}
+
+.follow-recording-bar {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: rgba(232, 93, 74, 0.75);
+  animation: follow-bar 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes follow-bar {
+  from {
+    height: 0.45rem;
+    opacity: 0.45;
+  }
+  to {
+    height: 1.75rem;
+    opacity: 1;
+  }
+}
+
+.follow-result-panel {
+  border-radius: 20px;
+  border: 2px solid var(--line);
+  padding: 1rem 1.15rem;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.follow-result-good {
+  border-color: rgba(47, 158, 107, 0.45);
+  background: rgba(47, 158, 107, 0.07);
+}
+
+.follow-result-ok {
+  border-color: rgba(255, 209, 102, 0.65);
+  background: rgba(255, 209, 102, 0.12);
+}
+
+.follow-result-low {
+  border-color: rgba(232, 93, 74, 0.4);
+  background: rgba(232, 93, 74, 0.06);
+}
+
+.follow-result-head {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.follow-score {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 999px;
+  background: white;
+  font-size: 1.75rem;
+  font-weight: 900;
+  color: var(--brand-deep);
+  box-shadow: var(--shadow);
+}
+
+.follow-result-label {
+  font-weight: 800;
+  font-size: 1.05rem;
+}
+
+.follow-result-pass {
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+}
+
+.follow-result-compare {
+  margin-top: 0.85rem;
+  display: grid;
+  gap: 0.45rem;
+  font-size: 0.98rem;
+  line-height: 1.55;
+}
+
+.follow-result-missed {
+  margin-top: 0.65rem;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.follow-result-feedback {
+  margin-top: 0.55rem;
+  color: var(--ink-soft);
 }

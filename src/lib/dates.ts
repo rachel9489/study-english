@@ -10,8 +10,21 @@ export function tomorrowKey(date = new Date()) {
   return format(d, "yyyy-MM-dd");
 }
 
+export function addDaysKey(dateStr: string, days: number) {
+  const d = new Date(dateStr + "T12:00:00");
+  d.setDate(d.getDate() + days);
+  return format(d, "yyyy-MM-dd");
+}
+
 export function nowTimeKey(date = new Date()) {
   return format(date, "HH:mm");
+}
+
+/** 当日新任务开始时间（之前只做早餐巩固） */
+export const DAY_STUDY_START = "10:00";
+
+export function isDayStudyStarted(now = new Date()) {
+  return nowTimeKey(now) >= DAY_STUDY_START;
 }
 
 export function isTimeUnlocked(unlockAfter: string | null | undefined, now = new Date()) {

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { AudioOrTtsPlayer } from "@/components/AudioOrTtsPlayer";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { BlindListenPlayer } from "@/components/BlindListenPlayer";
+import { patchChildTaskProgress } from "@/lib/child-today-cache";
 import type { ShadowProgress } from "@/lib/types";
 
 type Material = {
@@ -12,6 +13,7 @@ type Material = {
 
 export function ShadowTask({
   taskId,
+  materialId,
   material,
   initial,
   onSaved,
@@ -19,6 +21,7 @@ export function ShadowTask({
   requiredPlays,
 }: {
   taskId: string;
+  materialId?: string;
   material: Material;
   initial: ShadowProgress | { plays: number };
   onSaved: () => void;
@@ -27,23 +30,36 @@ export function ShadowTask({
 }) {
   const required = requiredPlays ?? ("required" in initial ? initial.required : 1) ?? 1;
   const [plays, setPlays] = useState(initial.plays ?? 0);
+  const playsRef = useRef(initial.plays ?? 0);
   const [recalling, setRecalling] = useState(false);
 
-  async function onEnded() {
-    const next = plays + 1;
+  useEffect(() => {
+    playsRef.current = plays;
+  }, [plays]);
+
+  const fullAudioText = useMemo(
+    () =>
+      material.scriptText
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .join(" "),
+    [material.scriptText],
+  );
+
+  async function onRoundComplete() {
+    const next = playsRef.current + 1;
+    playsRef.current = next;
     setPlays(next);
     setRecalling(true);
     const progress = required > 1 ? { plays: next, required } : { plays: next };
-    await fetch(`/api/tasks/${taskId}/progress`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ progress, complete: next >= required }),
-    });
+    await patchChildTaskProgress(taskId, { progress, complete: next >= required });
     if (next >= required) {
       setTimeout(() => onSaved(), 800);
-      return;
+    } else {
+      setTimeout(() => setRecalling(false), 12000);
     }
-    setTimeout(() => setRecalling(false), 12000);
+    return { plays: next, done: next >= required };
   }
 
   return (
@@ -67,12 +83,18 @@ export function ShadowTask({
           闭眼回忆 12 秒…想一想刚才的发音口型
         </div>
       ) : (
-        <AudioOrTtsPlayer
+        <BlindListenPlayer
           audioPath={material.audioPath}
-          text={material.scriptText}
-          label="开始裸听"
+          text={fullAudioText}
           rate={1}
-          onEnded={() => void onEnded()}
+          completedPlays={plays}
+          requiredPlays={required}
+          autoRepeat={false}
+          startLabel="开始裸听"
+          finishedLabel={`裸听 ${required} 遍已完成`}
+          onRoundComplete={onRoundComplete}
+          cacheMaterialId={materialId}
+          hint="播放中可「暂停」，点「继续播放」从原位置接着听；完整播完才算 1 遍。"
         />
       )}
     </div>

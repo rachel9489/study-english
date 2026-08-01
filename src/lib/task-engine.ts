@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import {
+  isDayStudyStarted,
   isTimeUnlocked,
   listeningModeForWeek,
   todayKey,
@@ -19,7 +20,7 @@ export async function getOrCreateChild() {
 export function defaultProgress(type: TaskType, phaseWeek = 1) {
   switch (type) {
     case "PREVIEW":
-      return { followedLines: [], vocabOpened: [] } satisfies PreviewProgress;
+      return { followedLines: [], listenedLines: [], vocabOpened: [] } satisfies PreviewProgress;
     case "AI_LESSON":
       return {
         stage: "read_aloud",
@@ -162,6 +163,28 @@ export async function createDailyPlan(params: {
   return refreshTaskLocks(plan.id);
 }
 
+export async function createWeeklyPlans(params: {
+  days: {
+    date: string;
+    phaseWeek: number;
+    previewMaterialId: string;
+    listeningMaterialId: string;
+  }[];
+  forceOrder?: boolean;
+  nightUnlock?: string;
+}) {
+  const plans = [];
+  for (const day of params.days) {
+    const plan = await createDailyPlan({
+      ...day,
+      forceOrder: params.forceOrder,
+      nightUnlock: params.nightUnlock,
+    });
+    plans.push(plan);
+  }
+  return plans;
+}
+
 export async function refreshTaskLocks(planId: string) {
   const plan = await prisma.dailyPlan.findUniqueOrThrow({
     where: { id: planId },
@@ -197,6 +220,16 @@ export async function refreshTaskLocks(planId: string) {
       if (plan.date === today && task.scheduledFor !== today) {
         available = false;
       }
+    }
+
+    // 当日新计划：10:00 前锁定（早餐巩固在昨日计划里，不受影响）
+    if (
+      plan.date === today &&
+      task.type !== "BREAKFAST_REVIEW" &&
+      !isDayStudyStarted() &&
+      task.status !== "in_progress"
+    ) {
+      available = false;
     }
 
     const nextStatus = available

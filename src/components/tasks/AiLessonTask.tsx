@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ScriptLines } from "@/components/ScriptLines";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ScriptLines, ConversationIcon } from "@/components/ScriptLines";
 import { AudioOrTtsPlayer } from "@/components/AudioOrTtsPlayer";
 import { AiStatusBadge } from "@/components/AiStatusBadge";
 import { VoiceCapture } from "@/components/VoiceCapture";
-import { speakEnglish } from "@/lib/tts";
+import { speakEnglish, stopSpeaking } from "@/lib/tts";
+import { patchChildTaskProgress } from "@/lib/child-today-cache";
+import type { QaGrammarFix } from "@/lib/ai/tutor";
 import type { AiLessonProgress } from "@/lib/types";
 
 type Material = {
@@ -27,14 +29,22 @@ export function AiLessonTask({
   onSaved: () => void;
 }) {
   const [progress, setProgress] = useState<AiLessonProgress>(initial);
+  const progressRef = useRef(initial);
   const [spoken, setSpoken] = useState("");
   const [feedback, setFeedback] = useState("");
+  const [grammarFixes, setGrammarFixes] = useState<QaGrammarFix[]>([]);
+  const [correctedSentence, setCorrectedSentence] = useState("");
   const [provider, setProvider] = useState("");
   const [questions, setQuestions] = useState<string[]>([]);
   const [qaIndex, setQaIndex] = useState(0);
+  const [qaSubmitted, setQaSubmitted] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const stage = progress.stage;
+
+  useEffect(() => {
+    progressRef.current = progress;
+  }, [progress]);
 
   useEffect(() => {
     void fetch("/api/ai/evaluate", {
@@ -53,6 +63,10 @@ export function AiLessonTask({
       });
   }, [material.scriptText, material.title]);
 
+  useEffect(() => {
+    stopSpeaking();
+  }, [qaIndex]);
+
   const stageLabel = useMemo(() => {
     if (stage === "read_aloud") return "阶段 1/3 · 朗读纠音";
     if (stage === "retell") return "阶段 2/3 · 范读复述";
@@ -60,23 +74,90 @@ export function AiLessonTask({
     return "已完成";
   }, [stage]);
 
+  function ScriptTextPanel() {
+    return (
+      <section className="script-panel">
+        <div className="script-panel-head">
+          <ConversationIcon className="script-panel-head-icon" />
+          <p className="font-bold">对话文本</p>
+        </div>
+        <div className="script-panel-body script-panel-body-flat">
+          <ScriptLines
+            variant="document"
+            scriptText={material.scriptText}
+            vocabularies={material.vocabularies}
+            showSpeaker={false}
+          />
+        </div>
+      </section>
+    );
+  }
+
   async function save(next: AiLessonProgress, complete = false) {
     setProgress(next);
-    await fetch(`/api/tasks/${taskId}/progress`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        progress: next,
-        complete,
-        session: { stage: next.stage, payload: { feedback, provider } },
-      }),
+    progressRef.current = next;
+    const result = await patchChildTaskProgress(taskId, {
+      progress: next,
+      complete,
+      session: { stage: next.stage, payload: { feedback, provider } },
     });
+    if (!result.ok) {
+      throw new Error(result.error);
+    }
     if (complete) onSaved();
+  }
+
+  function clearQaFeedback() {
+    setFeedback("");
+    setGrammarFixes([]);
+    setCorrectedSentence("");
+  }
+
+  function buildQaSpeechText(data: {
+    feedback: string;
+    correctedSentence?: string;
+  }) {
+    const parts = [data.feedback];
+    if (data.correctedSentence?.trim()) {
+      parts.push(`You can say: ${data.correctedSentence.trim()}`);
+    }
+    return parts.join(" ");
+  }
+
+  function QaFeedbackPanel() {
+    if (!feedback) return null;
+    return (
+      <div className="rounded-2xl border border-[var(--line)] bg-white/90 p-4 space-y-3">
+        <div>
+          <p className="mb-1 text-sm text-[var(--ink-soft)]">外教反馈</p>
+          <p>{feedback}</p>
+        </div>
+        {grammarFixes.length > 0 ? (
+          <div className="rounded-xl bg-[rgba(255,209,102,0.15)] px-3 py-2">
+            <p className="text-sm font-bold text-[var(--ink)]">语法纠正</p>
+            <ul className="mt-2 space-y-1 text-sm">
+              {grammarFixes.map((g, i) => (
+                <li key={i}>
+                  <span className="text-[var(--accent)]">{g.issue}</span>
+                  {g.suggestion ? ` → ${g.suggestion}` : ""}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {correctedSentence ? (
+          <div className="rounded-xl bg-[rgba(14,124,134,0.08)] px-3 py-2">
+            <p className="text-sm font-bold text-[var(--brand-deep)]">正确说法</p>
+            <p className="mt-1 text-lg">{correctedSentence}</p>
+          </div>
+        ) : null}
+      </div>
+    );
   }
 
   async function evaluate(mode: "read_aloud" | "retell", text = spoken) {
     setBusy(true);
-    setFeedback("");
+    clearQaFeedback();
     try {
       const res = await fetch("/api/ai/evaluate", {
         method: "POST",
@@ -102,30 +183,39 @@ export function AiLessonTask({
       }
 
       if (mode === "read_aloud" && data.passed) {
-        await save({
-          ...progress,
-          readAloudDone: true,
-          stage: "retell",
-          wrongWords: data.missed ?? [],
-        });
-        setSpoken("");
+        try {
+          await save({
+            ...progressRef.current,
+            readAloudDone: true,
+            stage: "retell",
+            wrongWords: data.missed ?? [],
+          });
+          setSpoken("");
+        } catch (e) {
+          setFeedback(e instanceof Error ? e.message : "保存失败，请重试");
+        }
       }
       if (mode === "retell" && data.passed) {
-        await save({
-          ...progress,
-          retellDone: true,
-          stage: "qa",
-        });
-        setSpoken("");
+        try {
+          await save({
+            ...progressRef.current,
+            retellDone: true,
+            stage: "qa",
+          });
+          setSpoken("");
+        } catch (e) {
+          setFeedback(e instanceof Error ? e.message : "保存失败，请重试");
+        }
       }
     } finally {
       setBusy(false);
     }
   }
 
-  async function submitQa() {
-    if (!questions[qaIndex]) return;
+  async function submitQa(answerText = spoken) {
+    if (!questions[qaIndex] || !answerText.trim() || qaSubmitted) return;
     setBusy(true);
+    clearQaFeedback();
     try {
       const res = await fetch("/api/ai/evaluate", {
         method: "POST",
@@ -134,7 +224,7 @@ export function AiLessonTask({
           mode: "qa",
           scriptText: material.scriptText,
           question: questions[qaIndex],
-          answer: spoken,
+          answer: answerText,
         }),
       });
       const data = await res.json();
@@ -143,34 +233,89 @@ export function AiLessonTask({
         return;
       }
       setFeedback(data.feedback);
+      setGrammarFixes(Array.isArray(data.grammarFixes) ? data.grammarFixes : []);
+      setCorrectedSentence(data.correctedSentence ?? "");
       if (data.provider) setProvider(data.provider);
       try {
-        await speakEnglish(data.feedback, 1);
+        await speakEnglish(
+          buildQaSpeechText({
+            feedback: data.feedback,
+            correctedSentence: data.correctedSentence,
+          }),
+          0.92,
+        );
       } catch {
-        // ignore
+        // ignore speak errors
       }
       const answers = [
-        ...progress.qaAnswers,
-        { question: questions[qaIndex], answer: spoken, feedback: data.feedback },
+        ...progressRef.current.qaAnswers,
+        {
+          question: questions[qaIndex],
+          answer: answerText,
+          feedback: data.feedback,
+          correctedSentence: data.correctedSentence,
+          grammarFixes: data.grammarFixes,
+        },
       ];
-      if (qaIndex < questions.length - 1) {
-        setQaIndex(qaIndex + 1);
-        setSpoken("");
-        await save({ ...progress, qaAnswers: answers });
-      } else {
-        await save(
-          {
-            ...progress,
-            qaAnswers: answers,
-            qaDone: true,
-            stage: "done",
-          },
-          true,
-        );
+      const nextProgress = { ...progressRef.current, qaAnswers: answers };
+      setProgress(nextProgress);
+      progressRef.current = nextProgress;
+      const result = await patchChildTaskProgress(taskId, {
+        progress: nextProgress,
+        complete: false,
+        session: { stage: "qa", payload: { feedback: data.feedback, provider: data.provider } },
+      });
+      if (!result.ok) {
+        setFeedback(result.error);
+        return;
       }
+      setQaSubmitted(true);
     } finally {
       setBusy(false);
     }
+  }
+
+  async function goNextQa() {
+    if (!qaSubmitted) return;
+
+    if (qaIndex < questions.length - 1) {
+      clearQaFeedback();
+      setSpoken("");
+      setQaSubmitted(false);
+      stopSpeaking();
+      setQaIndex(qaIndex + 1);
+      return;
+    }
+
+    stopSpeaking();
+    const nextProgress = { ...progressRef.current, qaDone: true, stage: "done" as const };
+    setProgress(nextProgress);
+    progressRef.current = nextProgress;
+    const result = await patchChildTaskProgress(taskId, {
+      progress: nextProgress,
+      complete: true,
+      session: { stage: "done", payload: { provider } },
+    });
+    if (!result.ok) {
+      setFeedback(result.error);
+      setQaSubmitted(true);
+      return;
+    }
+    onSaved();
+  }
+
+  async function finishLesson() {
+    const next = progressRef.current;
+    const result = await patchChildTaskProgress(taskId, {
+      progress: next,
+      complete: true,
+      session: { stage: "done", payload: { provider } },
+    });
+    if (!result.ok) {
+      setFeedback(result.error);
+      return;
+    }
+    onSaved();
   }
 
   return (
@@ -189,7 +334,7 @@ export function AiLessonTask({
 
       {stage === "read_aloud" && (
         <>
-          <ScriptLines scriptText={material.scriptText} vocabularies={material.vocabularies} />
+          <ScriptTextPanel />
           <textarea
             className="field min-h-28"
             placeholder="点「AI 云端录音」朗读，或打字输入你读到的内容"
@@ -215,6 +360,7 @@ export function AiLessonTask({
 
       {stage === "retell" && (
         <>
+          <ScriptTextPanel />
           <AudioOrTtsPlayer
             audioPath={material.audioPath}
             text={material.scriptText}
@@ -247,29 +393,59 @@ export function AiLessonTask({
 
       {stage === "qa" && (
         <>
-          <div className="rounded-2xl bg-white/80 p-5 text-xl">
-            {questions[qaIndex] ?? "加载问题中…"}
+          <div className="rounded-2xl bg-white/80 p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <p className="flex-1 text-xl leading-relaxed">
+                {questions[qaIndex] ?? "加载问题中…"}
+              </p>
+              {questions[qaIndex] ? (
+                <AudioOrTtsPlayer
+                  compact
+                  text={questions[qaIndex]}
+                  label="听题目"
+                  rate={0.92}
+                />
+              ) : null}
+            </div>
           </div>
           <textarea
             className="field min-h-28"
             placeholder="口头回答后自动填入，或直接打字"
             value={spoken}
+            disabled={qaSubmitted || busy}
             onChange={(e) => setSpoken(e.target.value)}
           />
-          <VoiceCapture
-            onText={setSpoken}
-            onError={setFeedback}
-            labelCloud="AI 云端回答录音"
-            labelBrowser="浏览器语音回答"
-          />
-          <button
-            type="button"
-            className="btn btn-accent"
-            disabled={busy || !spoken.trim()}
-            onClick={() => void submitQa()}
-          >
-            {busy ? "外教回应中…" : "下一题 / 完成"}
-          </button>
+          {!qaSubmitted ? (
+            <VoiceCapture
+              onText={(text) => {
+                setSpoken(text);
+                void submitQa(text);
+              }}
+              onError={setFeedback}
+              labelCloud="AI 云端回答录音"
+              labelBrowser="浏览器语音回答"
+            />
+          ) : null}
+          {!qaSubmitted ? (
+            <p className="text-sm text-[var(--ink-soft)]">
+              录完音会自动提交；外教会用语音纠正语法并示范正确句子。
+            </p>
+          ) : null}
+          <QaFeedbackPanel />
+          {qaSubmitted ? (
+            <button type="button" className="btn btn-accent" onClick={() => void goNextQa()}>
+              {qaIndex < questions.length - 1 ? "下一题" : "完成"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-accent"
+              disabled={busy || !spoken.trim()}
+              onClick={() => void submitQa()}
+            >
+              {busy ? "外教回应中…" : "提交回答"}
+            </button>
+          )}
         </>
       )}
 
@@ -277,16 +453,16 @@ export function AiLessonTask({
         <div className="rounded-2xl bg-[var(--accent-soft)] p-6">
           <h3 className="brand-mark text-3xl">外教课完成！</h3>
           <p className="mt-2">可以继续听力阶梯了。</p>
-          <button type="button" className="btn btn-primary mt-4" onClick={onSaved}>
+          <button type="button" className="btn btn-primary mt-4" onClick={() => void finishLesson()}>
             返回今日任务
           </button>
         </div>
       )}
 
-      {feedback ? (
+      {stage !== "qa" && feedback ? (
         <div className="rounded-2xl border border-[var(--line)] bg-white/90 p-4">
           <p className="mb-1 text-sm text-[var(--ink-soft)]">外教反馈</p>
-          {feedback}
+          <p>{feedback}</p>
         </div>
       ) : null}
     </div>

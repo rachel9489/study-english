@@ -6,10 +6,10 @@
 
 - 家长：资料库上传、日历排课、学习报告、AI 状态查看
 - 孩子：预习 → AI 外教三阶段 → 听力阶梯 → 裸听 → 早餐巩固
-- AI（可选）：
-  - LLM：纠音 / 复述评判 / 主题问答出题与点评
-  - Whisper：云端录音转写
-  - TTS：云端英音朗读（失败自动回退浏览器语音）
+- AI（可选，默认对接阿里云百炼）：
+  - LLM（`qwen-plus`）：纠音 / 复述评判 / 主题问答
+  - ASR（`qwen3-asr-flash`）：云端录音转写
+  - TTS（`cosyvoice-v3-flash` / `longxiaochun_v3`）：云端带读（失败回退浏览器语音）
 - 无 Key 时自动回退本地规则引擎
 
 ## 技术栈
@@ -43,7 +43,7 @@ npm run dev
 - 孩子端：`/child`
 - 家长端：`/parent`
 
-可选：配置 `AI_API_KEY` 后重启；打开 `/api/ai/status` 可看是否启用。
+可选：配置百炼 `AI_API_KEY` 后重启；打开 `/api/ai/status` 可看 LLM / ASR / TTS 是否启用。
 
 ## 部署到 Vercel（推荐路径）
 
@@ -117,25 +117,19 @@ npx vercel env pull .env.local
 
 在华为浏览器打开孩子端 → 菜单 → **添加到主屏幕**，即可当 App 用。
 
-## 配置真实 AI
-
-在 `.env` / Vercel 环境变量中设置：
+## 配置真实 AI（百炼）
 
 ```env
 AI_API_KEY=sk-xxx
-AI_BASE_URL=https://api.openai.com/v1
-AI_MODEL=gpt-4o-mini
+AI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+AI_MODEL=qwen-plus
+AI_TRANSCRIBE_MODEL=qwen3-asr-flash
+AI_TTS_MODEL=cosyvoice-v3-flash
+AI_TTS_VOICE=longxiaochun_v3
+AI_AUDIO_ENABLED=true
 ```
 
-DeepSeek 示例：
-
-```env
-AI_API_KEY=sk-xxx
-AI_BASE_URL=https://api.deepseek.com/v1
-AI_MODEL=deepseek-chat
-```
-
-> Whisper / TTS 需要供应商支持 `/audio/*`。若仅有 Chat，评估仍可用 LLM，录音会回退浏览器语音。
+> CosyVoice TTS 当前主要在华北2（北京）可用。若合成失败，带读会自动回退浏览器语音。
 
 ## 脚本
 

@@ -18,7 +18,7 @@ const bodySchema = z.object({
 function canComplete(type: string, progress: unknown): boolean {
   if (type === "PREVIEW") {
     const p = progress as PreviewProgress;
-    return (p.followedLines?.length ?? 0) >= 1;
+    return (p.followedLines?.length ?? 0) >= 1 || (p.listenedLines?.length ?? 0) >= 1;
   }
   if (type === "AI_LESSON") {
     const p = progress as AiLessonProgress;
@@ -69,10 +69,24 @@ export async function PATCH(
     });
   }
 
-  let plan = await updateTaskProgress(id, body.progress, true);
+  let progress = body.progress;
+  if (task.type === "AI_LESSON") {
+    const existing = parseProgress<AiLessonProgress>(task.progressJson);
+    const incoming = body.progress as AiLessonProgress;
+    progress = {
+      ...existing,
+      ...incoming,
+      readAloudDone: existing.readAloudDone || incoming.readAloudDone,
+      retellDone: existing.retellDone || incoming.retellDone,
+      qaDone: existing.qaDone || incoming.qaDone,
+      qaAnswers: incoming.qaAnswers?.length ? incoming.qaAnswers : existing.qaAnswers,
+    };
+  }
 
-  const shouldComplete = body.complete || canComplete(task.type, body.progress);
-  if (shouldComplete && canComplete(task.type, body.progress)) {
+  let plan = await updateTaskProgress(id, progress, true);
+
+  const shouldComplete = body.complete || canComplete(task.type, progress);
+  if (shouldComplete && canComplete(task.type, progress)) {
     plan = await completeTask(id);
   }
 
@@ -80,6 +94,6 @@ export async function PATCH(
   return NextResponse.json({
     plan,
     task: updated,
-    progress: updated ? parseProgress(updated.progressJson) : body.progress,
+    progress: updated ? parseProgress(updated.progressJson) : progress,
   });
 }

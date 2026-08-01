@@ -27,9 +27,18 @@ export const MATERIAL_CATEGORIES = [
 
 export type MaterialCategory = (typeof MATERIAL_CATEGORIES)[number]["value"];
 
+export type PreviewLineResult = {
+  score: number;
+  feedback: string;
+  transcript: string;
+  missed?: string[];
+};
+
 export type PreviewProgress = {
   followedLines: number[];
+  listenedLines?: number[];
   vocabOpened: string[];
+  lineResults?: Record<string, PreviewLineResult>;
 };
 
 export type AiLessonProgress = {
@@ -37,7 +46,13 @@ export type AiLessonProgress = {
   readAloudDone: boolean;
   retellDone: boolean;
   qaDone: boolean;
-  qaAnswers: { question: string; answer: string; feedback: string }[];
+  qaAnswers: {
+    question: string;
+    answer: string;
+    feedback: string;
+    correctedSentence?: string;
+    grammarFixes?: { issue: string; suggestion: string }[];
+  }[];
   wrongWords: string[];
 };
 

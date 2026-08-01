@@ -7,43 +7,32 @@ export async function GET() {
   const child = await getOrCreateChild();
   const date = todayKey();
 
-  // Today's plan
-  let plan = await ensurePlanForDate(date, child.id);
+  // Today's plan already refreshes locks inside ensurePlanForDate
+  const plan = await ensurePlanForDate(date, child.id);
 
-  // Also surface breakfast task from yesterday if scheduled for today
-  const yesterdayPlans = await prisma.dailyPlan.findMany({
-    where: { childId: child.id },
-    include: {
-      tasks: {
-        where: { type: "BREAKFAST_REVIEW", scheduledFor: date },
-        include: { material: { include: { vocabularies: true } } },
-      },
+  let breakfastTask = await prisma.taskItem.findFirst({
+    where: {
+      type: "BREAKFAST_REVIEW",
+      scheduledFor: date,
+      plan: { childId: child.id },
     },
-    orderBy: { date: "desc" },
-    take: 3,
+    include: { material: { include: { vocabularies: true } } },
+    orderBy: { createdAt: "desc" },
   });
 
-  const breakfastFromYesterday = yesterdayPlans
-    .flatMap((p) => p.tasks)
-    .find((t) => t.scheduledFor === date);
-
-  if (breakfastFromYesterday && breakfastFromYesterday.planId) {
-    await refreshTaskLocks(breakfastFromYesterday.planId);
-  }
-
-  if (plan) {
-    plan = await refreshTaskLocks(plan.id);
+  // Breakfast may live on yesterday's plan — refresh that plan once
+  if (breakfastTask && breakfastTask.planId !== plan?.id) {
+    await refreshTaskLocks(breakfastTask.planId);
+    breakfastTask = await prisma.taskItem.findUnique({
+      where: { id: breakfastTask.id },
+      include: { material: { include: { vocabularies: true } } },
+    });
   }
 
   return NextResponse.json({
     child,
     date,
     plan,
-    breakfastTask: breakfastFromYesterday
-      ? await prisma.taskItem.findUnique({
-          where: { id: breakfastFromYesterday.id },
-          include: { material: { include: { vocabularies: true } } },
-        })
-      : null,
+    breakfastTask,
   });
 }

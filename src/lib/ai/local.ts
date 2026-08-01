@@ -82,8 +82,15 @@ export function generateQaQuestionsLocal(scriptText: string, title: string) {
 
 export function evaluateQaAnswerLocal(question: string, answer: string) {
   const len = answer.trim().length;
+  const hasChinese = /[\u4e00-\u9fff]/.test(answer);
+  const hasEnglish = /[a-zA-Z]/.test(answer);
+
   if (len < 2) {
-    return { feedback: "试着用一句话回答，英文或中文都可以。", passed: false, provider: "local" as const };
+    return {
+      feedback: "试着用一句话回答，英文或中文都可以。",
+      passed: false,
+      provider: "local" as const,
+    };
   }
   if (len < 8) {
     return {
@@ -92,9 +99,24 @@ export function evaluateQaAnswerLocal(question: string, answer: string) {
       provider: "local" as const,
     };
   }
+
+  const correctedSentence = hasChinese
+    ? "Try answering in a full English sentence next time."
+    : hasEnglish
+      ? answer.trim().replace(/\bi\b/g, "I").replace(/^\w/, (c) => c.toUpperCase())
+      : undefined;
+
+  const grammarFixes =
+    hasEnglish && /\bi\b/.test(answer)
+      ? [{ issue: "代词 i 没有大写", suggestion: "句首或单独使用时写 I" }]
+      : undefined;
+
   return {
-    feedback: `Nice answer! You responded to: "${question.slice(0, 40)}${question.length > 40 ? "…" : ""}"`,
+    feedback: `Nice try! You answered the question about "${question.slice(0, 36)}${question.length > 36 ? "…" : ""}".`,
     passed: true,
+    grammarFixes,
+    correctedSentence:
+      correctedSentence && correctedSentence !== answer.trim() ? correctedSentence : undefined,
     provider: "local" as const,
   };
 }

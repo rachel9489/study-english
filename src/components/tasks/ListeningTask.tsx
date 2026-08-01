@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { ScriptLines } from "@/components/ScriptLines";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ConversationIcon, ScriptLines } from "@/components/ScriptLines";
 import { AudioOrTtsPlayer } from "@/components/AudioOrTtsPlayer";
+import { BlindListenPlayer } from "@/components/BlindListenPlayer";
 import { speakEnglish } from "@/lib/tts";
+import { patchChildTaskProgress } from "@/lib/child-today-cache";
 import type { ListeningProgress } from "@/lib/types";
 
 type Material = {
@@ -13,21 +15,47 @@ type Material = {
   vocabularies: { word: string; meaning: string; phonetic?: string }[];
 };
 
+type PreviewFullAudio = {
+  audioPath?: string | null;
+  text: string;
+  materialId?: string;
+};
+
 export function ListeningTask({
   taskId,
+  materialId,
   material,
   initial,
+  previewFullAudio,
   onSaved,
 }: {
   taskId: string;
+  materialId?: string;
   material: Material;
   initial: ListeningProgress;
+  /** 第一步预习的全文音频；盲听时优先使用 */
+  previewFullAudio?: PreviewFullAudio;
   onSaved: () => void;
 }) {
   const [progress, setProgress] = useState<ListeningProgress>(initial);
+  const progressRef = useRef(initial);
   const [showText, setShowText] = useState(!initial.followDone);
   const [text, setText] = useState(initial.retellText || initial.summaryText || "");
   const [active, setActive] = useState(0);
+  const [blindPlayTrigger, setBlindPlayTrigger] = useState(0);
+  const blindControlRef = useRef<{ cancel: () => void } | null>(null);
+
+  useEffect(() => {
+    progressRef.current = progress;
+  }, [progress]);
+
+  const lines = useMemo(
+    () => material.scriptText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean),
+    [material.scriptText],
+  );
+  const fullAudioText = useMemo(() => lines.join(" "), [lines]);
+  const blindAudioPath = previewFullAudio?.audioPath ?? null;
+  const blindAudioText = previewFullAudio?.text?.trim() || fullAudioText;
 
   const modeTip = useMemo(() => {
     switch (progress.mode) {
@@ -46,11 +74,7 @@ export function ListeningTask({
 
   async function save(next: ListeningProgress, complete = false) {
     setProgress(next);
-    await fetch(`/api/tasks/${taskId}/progress`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ progress: next, complete }),
-    });
+    await patchChildTaskProgress(taskId, { progress: next, complete });
     if (complete) onSaved();
   }
 
@@ -60,18 +84,23 @@ export function ListeningTask({
   }
 
   async function markFollowDone() {
-    await save({ ...progress, followDone: true });
+    await save({ ...progressRef.current, followDone: true });
     setShowText(false);
+    setBlindPlayTrigger((n) => n + 1);
   }
 
-  async function onBlindEnded() {
-    const plays = progress.blindPlays + 1;
-    const next = { ...progress, blindPlays: plays };
-    const done =
-      (progress.mode === "text_then_blind_x3" || progress.mode === "subtitle_then_blind") &&
-      progress.followDone &&
-      plays >= 3;
+  function startBlindListen() {
+    setShowText(false);
+    blindControlRef.current?.cancel();
+    setBlindPlayTrigger((n) => n + 1);
+  }
+
+  async function onBlindRoundComplete() {
+    const plays = progressRef.current.blindPlays + 1;
+    const next = { ...progressRef.current, blindPlays: plays };
+    const done = progressRef.current.followDone && plays >= 3;
     await save(next, done);
+    return { plays, done };
   }
 
   async function submitText() {
@@ -85,6 +114,35 @@ export function ListeningTask({
   const needsFollowFirst =
     progress.mode === "text_then_blind_x3" || progress.mode === "subtitle_then_blind";
 
+  function ScriptTextPanel({
+    title = "对话文本",
+    activeIndex,
+    onLineClick,
+  }: {
+    title?: string;
+    activeIndex?: number;
+    onLineClick?: (index: number, line: string) => void;
+  }) {
+    return (
+      <section className="script-panel">
+        <div className="script-panel-head">
+          <ConversationIcon className="script-panel-head-icon" />
+          <p className="font-bold">{title}</p>
+        </div>
+        <div className="script-panel-body script-panel-body-flat">
+          <ScriptLines
+            variant="document"
+            scriptText={material.scriptText}
+            vocabularies={material.vocabularies}
+            showSpeaker={false}
+            activeIndex={activeIndex}
+            onLineClick={onLineClick}
+          />
+        </div>
+      </section>
+    );
+  }
+
   return (
     <div className="space-y-5">
       <div>
@@ -94,11 +152,10 @@ export function ListeningTask({
 
       {needsFollowFirst && !progress.followDone && (
         <>
-          <ScriptLines
-            scriptText={material.scriptText}
-            vocabularies={material.vocabularies}
+          <ScriptTextPanel
+            title="对话文本 · 点击句子跟读"
             activeIndex={active}
-            onSelect={(i, line) => void followLine(i, line)}
+            onLineClick={(i, line) => void followLine(i, line)}
           />
           <button type="button" className="btn btn-primary" onClick={() => void markFollowDone()}>
             跟读完成，开始盲听
@@ -111,23 +168,40 @@ export function ListeningTask({
         progress.mode === "bare_summary") && (
         <>
           {(progress.mode === "subtitle_then_blind" || progress.mode === "text_then_blind_x3") && (
-            <button type="button" className="btn btn-ghost" onClick={() => setShowText((v) => !v)}>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => (showText ? startBlindListen() : setShowText(true))}
+            >
               {showText ? "隐藏文本（盲听）" : "显示文本"}
             </button>
           )}
-          {showText && progress.mode !== "bare_summary" && (
-            <ScriptLines scriptText={material.scriptText} vocabularies={material.vocabularies} />
+          {showText && progress.mode !== "bare_summary" && <ScriptTextPanel />}
+          {needsFollowFirst ? (
+            <>
+              <BlindListenPlayer
+                audioPath={blindAudioPath}
+                text={blindAudioText}
+                rate={0.9}
+                completedPlays={progress.blindPlays}
+                onRoundComplete={onBlindRoundComplete}
+                playTrigger={blindPlayTrigger}
+                controlRef={blindControlRef}
+                cacheMaterialId={previewFullAudio?.materialId ?? materialId}
+              />
+              <p className="text-sm text-[var(--ink-soft)]">
+                点一次「盲听」自动连播 3 遍；播放中可「暂停」，点「继续播放」从原位置接着听。
+              </p>
+              <p className="badge">已盲听 {progress.blindPlays}/3 遍</p>
+            </>
+          ) : (
+            <AudioOrTtsPlayer
+              audioPath={material.audioPath}
+              text={fullAudioText}
+              label="整集播放"
+              rate={1}
+            />
           )}
-          <AudioOrTtsPlayer
-            audioPath={material.audioPath}
-            text={material.scriptText}
-            label={needsFollowFirst ? `盲听（${progress.blindPlays}/3）` : "整集播放"}
-            rate={1}
-            onEnded={() => {
-              if (needsFollowFirst) void onBlindEnded();
-            }}
-          />
-          {needsFollowFirst && <p className="badge">已盲听 {progress.blindPlays}/3 遍</p>}
         </>
       )}
 

@@ -16,6 +16,16 @@ function authHeaders(extra?: HeadersInit): HeadersInit {
   };
 }
 
+function mimeFromFilename(filename: string, fallback = "audio/webm") {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith(".wav")) return "audio/wav";
+  if (lower.endsWith(".mp3")) return "audio/mpeg";
+  if (lower.endsWith(".m4a")) return "audio/mp4";
+  if (lower.endsWith(".ogg")) return "audio/ogg";
+  if (lower.endsWith(".webm")) return "audio/webm";
+  return fallback;
+}
+
 export async function chatJson<T>(params: {
   system: string;
   user: string;
@@ -77,12 +87,57 @@ export async function chatJson<T>(params: {
   }
 }
 
-export async function transcribeAudio(file: File | Blob, filename = "audio.webm") {
+async function transcribeWithBailian(file: File | Blob, filename: string) {
   const cfg = getAiConfig();
-  if (!cfg.enabled || !cfg.audioEnabled) {
-    throw new AiRequestError("AI 音频未启用，无法转写", 503);
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const mime =
+    (file instanceof File && file.type) || mimeFromFilename(filename, "audio/webm");
+  const dataUri = `data:${mime};base64,${bytes.toString("base64")}`;
+
+  const res = await fetch(`${cfg.baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({
+      model: cfg.transcribeModel,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_audio",
+              input_audio: { data: dataUri },
+            },
+          ],
+        },
+      ],
+      asr_options: {
+        language: "en",
+        enable_itn: true,
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new AiRequestError(`百炼 ASR 失败: ${res.status} ${text.slice(0, 240)}`, res.status);
   }
 
+  const data = (await res.json()) as {
+    choices?: { message?: { content?: string | { text?: string }[] } }[];
+  };
+  const content = data.choices?.[0]?.message?.content;
+  if (typeof content === "string") return content.trim();
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => (typeof part === "string" ? part : part?.text || ""))
+      .join("")
+      .trim();
+  }
+  return "";
+}
+
+async function transcribeWithOpenAI(file: File | Blob, filename: string) {
+  const cfg = getAiConfig();
   const form = new FormData();
   form.append("file", file, filename);
   form.append("model", cfg.transcribeModel);
@@ -104,12 +159,71 @@ export async function transcribeAudio(file: File | Blob, filename = "audio.webm"
   return (data.text || "").trim();
 }
 
-export async function synthesizeSpeech(text: string, opts?: { voice?: string; speed?: number }) {
+export async function transcribeAudio(file: File | Blob, filename = "audio.webm") {
   const cfg = getAiConfig();
   if (!cfg.enabled || !cfg.audioEnabled) {
-    throw new AiRequestError("AI 音频未启用，无法合成语音", 503);
+    throw new AiRequestError("AI 音频未启用，无法转写", 503);
   }
 
+  if (cfg.provider === "bailian") {
+    return transcribeWithBailian(file, filename);
+  }
+  return transcribeWithOpenAI(file, filename);
+}
+
+async function synthesizeWithBailian(text: string, opts?: { voice?: string; speed?: number }) {
+  const cfg = getAiConfig();
+  const isEnglish = !/[\u4e00-\u9fff]/.test(text);
+  const url = `${cfg.dashscopeRoot}/api/v1/services/audio/tts/SpeechSynthesizer`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({
+      model: cfg.ttsModel,
+      input: {
+        text: text.slice(0, 2000),
+        voice: opts?.voice || cfg.ttsVoice,
+        format: "mp3",
+        sample_rate: 22050,
+        rate: Math.min(2, Math.max(0.5, opts?.speed ?? 1)),
+        language_hints: [isEnglish ? "en" : "zh"],
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new AiRequestError(`百炼 TTS 失败: ${res.status} ${errText.slice(0, 240)}`, res.status);
+  }
+
+  const data = (await res.json()) as {
+    code?: string;
+    message?: string;
+    output?: { audio?: { url?: string; data?: string } };
+  };
+
+  if (data.code && data.code !== "Success") {
+    throw new AiRequestError(`百炼 TTS 失败: ${data.code} ${data.message || ""}`, 502);
+  }
+
+  const audioUrl = data.output?.audio?.url;
+  const audioData = data.output?.audio?.data;
+  if (audioUrl) {
+    const audioRes = await fetch(audioUrl);
+    if (!audioRes.ok) {
+      throw new AiRequestError(`下载合成音频失败: ${audioRes.status}`, audioRes.status);
+    }
+    return Buffer.from(await audioRes.arrayBuffer());
+  }
+  if (audioData) {
+    return Buffer.from(audioData, "base64");
+  }
+  throw new AiRequestError("百炼 TTS 未返回音频");
+}
+
+async function synthesizeWithOpenAI(text: string, opts?: { voice?: string; speed?: number }) {
+  const cfg = getAiConfig();
   const res = await fetch(`${cfg.baseUrl}/audio/speech`, {
     method: "POST",
     headers: authHeaders({ "Content-Type": "application/json" }),
@@ -128,4 +242,16 @@ export async function synthesizeSpeech(text: string, opts?: { voice?: string; sp
   }
 
   return Buffer.from(await res.arrayBuffer());
+}
+
+export async function synthesizeSpeech(text: string, opts?: { voice?: string; speed?: number }) {
+  const cfg = getAiConfig();
+  if (!cfg.enabled || !cfg.audioEnabled) {
+    throw new AiRequestError("AI 音频未启用，无法合成语音", 503);
+  }
+
+  if (cfg.provider === "bailian") {
+    return synthesizeWithBailian(text, opts);
+  }
+  return synthesizeWithOpenAI(text, opts);
 }

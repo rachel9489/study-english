@@ -7,6 +7,7 @@ import { PreviewTask } from "@/components/tasks/PreviewTask";
 import { AiLessonTask } from "@/components/tasks/AiLessonTask";
 import { ListeningTask } from "@/components/tasks/ListeningTask";
 import { ShadowTask } from "@/components/tasks/ShadowTask";
+import { fetchChildToday, type ChildTodayTask } from "@/lib/child-today-cache";
 import type {
   AiLessonProgress,
   ListeningProgress,
@@ -15,43 +16,71 @@ import type {
   TaskType,
 } from "@/lib/types";
 
-type TaskDetail = {
-  id: string;
+type TaskDetail = ChildTodayTask & {
   type: TaskType;
-  status: string;
   progressJson: string;
+  materialId?: string | null;
   material: {
     title: string;
     scriptText: string;
     audioPath?: string | null;
     vocabularies: { word: string; meaning: string; phonetic?: string }[];
-  } | null;
+  };
 };
+
+function previewFullAudioFromPlan(tasks: ChildTodayTask[]) {
+  const preview = tasks.find((t) => t.type === "PREVIEW");
+  const scriptText = preview?.material?.scriptText;
+  if (!scriptText) return undefined;
+  const text = scriptText
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .join(" ");
+  return {
+    audioPath: preview?.material?.audioPath ?? null,
+    text,
+    materialId: preview?.materialId ?? undefined,
+  };
+}
+
+function isTaskDetail(t: ChildTodayTask): t is TaskDetail {
+  return Boolean(t.material?.scriptText != null && t.progressJson != null);
+}
 
 export default function TaskPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [task, setTask] = useState<TaskDetail | null>(null);
+  const [previewFullAudio, setPreviewFullAudio] = useState<
+    { audioPath?: string | null; text: string } | undefined
+  >();
   const [error, setError] = useState("");
 
   useEffect(() => {
     void (async () => {
-      const res = await fetch("/api/child/today");
-      const data = await res.json();
-      const all = [
-        ...(data.plan?.tasks ?? []),
-        ...(data.breakfastTask ? [data.breakfastTask] : []),
-      ];
-      const found = all.find((t: TaskDetail) => t.id === params.id);
-      if (!found) {
-        setError("找不到这个任务");
-        return;
+      try {
+        const data = await fetchChildToday();
+        const planTasks = data.plan?.tasks ?? [];
+        const all = [...planTasks, ...(data.breakfastTask ? [data.breakfastTask] : [])];
+        setPreviewFullAudio(previewFullAudioFromPlan(planTasks));
+        const found = all.find((t) => t.id === params.id);
+        if (!found) {
+          setError("找不到这个任务");
+          return;
+        }
+        if (found.status === "locked") {
+          setError("任务还未解锁，请按顺序完成前一步");
+          return;
+        }
+        if (!isTaskDetail(found)) {
+          setError("任务资料不完整，请返回首页重新加载");
+          return;
+        }
+        setTask(found);
+      } catch {
+        setError("加载任务失败，请返回重试");
       }
-      if (found.status === "locked") {
-        setError("任务还未解锁，请按顺序完成前一步");
-        return;
-      }
-      setTask(found);
     })();
   }, [params.id]);
 
@@ -81,6 +110,7 @@ export default function TaskPage() {
       {task.type === "PREVIEW" && (
         <PreviewTask
           taskId={task.id}
+          materialId={task.materialId ?? undefined}
           material={task.material}
           initial={progress as PreviewProgress}
           onSaved={back}
@@ -97,14 +127,17 @@ export default function TaskPage() {
       {task.type === "LISTENING_LADDER" && (
         <ListeningTask
           taskId={task.id}
+          materialId={task.materialId ?? undefined}
           material={task.material}
           initial={progress as ListeningProgress}
+          previewFullAudio={previewFullAudio}
           onSaved={back}
         />
       )}
       {task.type === "NIGHT_SHADOW" && (
         <ShadowTask
           taskId={task.id}
+          materialId={task.materialId ?? undefined}
           material={task.material}
           initial={progress as ShadowProgress}
           onSaved={back}
@@ -115,6 +148,7 @@ export default function TaskPage() {
       {task.type === "BREAKFAST_REVIEW" && (
         <ShadowTask
           taskId={task.id}
+          materialId={task.materialId ?? undefined}
           material={task.material}
           initial={progress as { plays: number }}
           onSaved={back}

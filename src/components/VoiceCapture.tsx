@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { listenOnce, startCloudRecording } from "@/lib/tts";
+import { listenOnce, startCloudRecording, transcribeBlob } from "@/lib/tts";
 
 type Props = {
   onText: (text: string) => void;
@@ -64,8 +64,9 @@ export function VoiceCapture({
     setTranscribing(true);
     if (timerRef.current) window.clearInterval(timerRef.current);
     try {
-      const text = await recorderRef.current!.stop();
+      const blob = await recorderRef.current!.stop();
       recorderRef.current = null;
+      const text = await transcribeBlob(blob);
       if (text) onText(text);
       else onError?.("没有识别到内容");
     } catch (e) {

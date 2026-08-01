@@ -2,28 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { TASK_LABELS, type TaskType } from "@/lib/types";
+import { fetchChildToday, getCachedChildToday, type ChildTodayData, type ChildTodayTask } from "@/lib/child-today-cache";
+import { DAY_STUDY_START, isDayStudyStarted } from "@/lib/dates";
+import { TASK_LABELS } from "@/lib/types";
 
-type Task = {
-  id: string;
-  type: TaskType;
-  status: string;
-  durationMin: number;
-  unlockAfter?: string | null;
-  scheduledFor?: string | null;
-  material?: { title: string } | null;
-};
-
-type TodayResp = {
-  child: { name: string; streak: number; phaseWeek: number };
-  date: string;
-  plan: null | {
-    id: string;
-    phaseWeek: number;
-    tasks: Task[];
-  };
-  breakfastTask: Task | null;
-};
+type Task = ChildTodayTask;
 
 const statusUI: Record<string, { label: string; icon: string }> = {
   completed: { label: "已完成", icon: "✅" },
@@ -33,15 +16,48 @@ const statusUI: Record<string, { label: string; icon: string }> = {
 };
 
 export default function ChildHomePage() {
-  const [data, setData] = useState<TodayResp | null>(null);
+  const [data, setData] = useState<ChildTodayData | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  async function load() {
-    const res = await fetch("/api/child/today");
-    setData(await res.json());
+  async function load(options?: { silent?: boolean }) {
+    if (!options?.silent) {
+      const cached = getCachedChildToday();
+      if (cached) {
+        setData(cached);
+        setLoading(false);
+        setError("");
+      } else {
+        setLoading(true);
+        setError("");
+      }
+    }
+
+    try {
+      setData(await fetchChildToday({ force: true }));
+      setError("");
+    } catch (e) {
+      if (!getCachedChildToday()) {
+        setError(e instanceof Error ? e.message : "网络异常，请重试");
+        setData(null);
+      }
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
     void load();
+    const refresh = () => void load({ silent: true });
+    window.addEventListener("pageshow", refresh);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("pageshow", refresh);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   const tasks = useMemo(() => {
@@ -59,12 +75,58 @@ export default function ChildHomePage() {
     });
   }, [data]);
 
-  const current = tasks.find((t) => t.status === "available" || t.status === "in_progress");
+  const studyStarted = isDayStudyStarted();
+
+  const breakfastTask = data?.breakfastTask ?? null;
+  const breakfastPending =
+    breakfastTask &&
+    (breakfastTask.status === "available" || breakfastTask.status === "in_progress");
+
+  const current = useMemo(() => {
+    const active = tasks.filter((t) => t.status === "available" || t.status === "in_progress");
+    const breakfast = active.find((t) => t.type === "BREAKFAST_REVIEW");
+    const todayCore = active.find((t) => t.type !== "BREAKFAST_REVIEW");
+
+    if (!studyStarted && breakfast) return breakfast;
+    if (todayCore) return todayCore;
+    return breakfast ?? active[0];
+  }, [tasks, studyStarted]);
+
   const doneCount = tasks.filter((t) => t.status === "completed").length;
   const allDone = tasks.length > 0 && doneCount === tasks.length;
 
+  if (loading) {
+    return (
+      <div className="panel p-8">
+        <p className="brand-mark text-2xl">正在准备今日任务…</p>
+        <p className="mt-3 text-[var(--ink-soft)]">
+          首次打开可能需要十几秒（云端数据库唤醒），请稍等。
+        </p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="panel p-8 space-y-4">
+        <p className="brand-mark text-2xl">加载失败</p>
+        <p className="text-[var(--ink-soft)]">{error}</p>
+        <button type="button" className="btn btn-primary" onClick={() => void load()}>
+          重新加载
+        </button>
+      </div>
+    );
+  }
+
   if (!data) {
-    return <div className="panel p-8">正在准备今日任务…</div>;
+    return (
+      <div className="panel p-8 space-y-4">
+        <p>暂无数据</p>
+        <button type="button" className="btn btn-primary" onClick={() => void load()}>
+          重新加载
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -93,6 +155,13 @@ export default function ChildHomePage() {
           </div>
         )}
 
+        {!studyStarted && breakfastPending ? (
+          <div className="mt-4 rounded-2xl bg-[var(--accent-soft)] px-4 py-3 text-sm text-[var(--ink-soft)]">
+            上午 <strong>{DAY_STUDY_START}</strong> 前建议先完成{" "}
+            <strong>早餐巩固</strong>；新任务 {DAY_STUDY_START} 后开始（未做完也可在之后补做）。
+          </div>
+        ) : null}
+
         {current && (
           <Link href={`/child/task/${current.id}`} className="btn btn-accent mt-6 w-full text-xl">
             继续学习 · {TASK_LABELS[current.type]}
@@ -108,9 +177,18 @@ export default function ChildHomePage() {
       ) : (
         <section className="panel anim-rise p-4 md:p-6">
           <ul className="space-y-3">
-            {data.plan.tasks.map((task, index) => {
+            {tasks.map((task, index) => {
               const ui = statusUI[task.status] ?? statusUI.locked;
-              const clickable = task.status === "available" || task.status === "in_progress";
+              const clickable =
+                task.status === "available" ||
+                task.status === "in_progress" ||
+                task.status === "completed";
+              const actionLabel =
+                task.status === "completed"
+                  ? "复习"
+                  : task.status === "in_progress"
+                    ? "继续"
+                    : "开始";
               const content = (
                 <div className="flex items-center justify-between gap-3 rounded-2xl bg-white/75 px-4 py-4">
                   <div>
@@ -122,13 +200,23 @@ export default function ChildHomePage() {
                       {task.type === "BREAKFAST_REVIEW" && task.scheduledFor
                         ? ` · ${task.scheduledFor} 早餐`
                         : ""}
+                      {task.status === "locked" &&
+                      !studyStarted &&
+                      task.type !== "BREAKFAST_REVIEW" &&
+                      data.plan.tasks.some((t) => t.id === task.id)
+                        ? ` · ${DAY_STUDY_START} 后开始`
+                        : ""}
                     </p>
                     <h3 className="text-xl font-extrabold">
                       {index + 1}. {TASK_LABELS[task.type]}（{task.durationMin}分钟）
                     </h3>
                     <p className="text-[var(--ink-soft)]">{task.material?.title}</p>
                   </div>
-                  {clickable ? <span className="btn btn-primary">开始</span> : null}
+                  {clickable ? (
+                    <span className={`btn ${task.status === "completed" ? "btn-ghost" : "btn-primary"}`}>
+                      {actionLabel}
+                    </span>
+                  ) : null}
                 </div>
               );
               return (

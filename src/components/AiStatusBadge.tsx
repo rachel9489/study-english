@@ -32,7 +32,9 @@ export function AiStatusBadge({ className = "" }: { className?: string }) {
 
   return (
     <span className={`badge ${className}`} title={status.provider}>
-      {status.enabled ? `AI 外教 · ${status.model}` : "本地规则外教（未配置 AI_API_KEY）"}
+      {status.enabled
+        ? `AI · ${status.model}${status.tts ? " · 云端带读" : ""}${status.transcribe ? " · 云端录音" : ""}`
+        : "本地规则外教（未配置 AI_API_KEY）"}
     </span>
   );
 }

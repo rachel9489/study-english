@@ -27,7 +27,11 @@ export async function POST(req: Request) {
     if (!text) {
       return NextResponse.json({ error: "没有识别到内容，请再试一次" }, { status: 422 });
     }
-    return NextResponse.json({ text, provider: "whisper", model: cfg.transcribeModel });
+    return NextResponse.json({
+      text,
+      provider: cfg.provider,
+      model: cfg.transcribeModel,
+    });
   } catch (err) {
     const message = err instanceof AiRequestError ? err.message : "转写失败";
     const status = err instanceof AiRequestError ? err.status : 500;
