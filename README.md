@@ -132,7 +132,7 @@ AI_TRANSCRIBE_ENABLED=true
 BLOB_READ_WRITE_TOKEN=vercel_blob_xxx
 ```
 
-> 线上请配置 Vercel Blob，并在家长端重新上传音频。`AI_TTS_ENABLED=true` 才会调用 CosyVoice；关闭时自动用浏览器朗读。
+> 推荐：**全文用 Blob 原音 MP3，预习逐句用 CosyVoice**（设 `AI_TTS_ENABLED=true`）。额度紧时再改 `false`，逐句会改用浏览器语音。线上请配置 Blob 并重新上传原音。
 
 ## 脚本
 

@@ -39,27 +39,37 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const data = updateSchema.parse(await req.json());
-  if (data.vocabularies) {
-    await prisma.vocabularyItem.deleteMany({ where: { materialId: id } });
+  try {
+    const data = updateSchema.parse(await req.json());
+    if (data.vocabularies) {
+      await prisma.vocabularyItem.deleteMany({ where: { materialId: id } });
+    }
+    const material = await prisma.learningMaterial.update({
+      where: { id },
+      data: {
+        title: data.title,
+        category: data.category,
+        description: data.description,
+        scriptText: data.scriptText,
+        audioPath: data.audioPath,
+        videoPath: data.videoPath,
+        levelTag: data.levelTag,
+        ...(data.vocabularies
+          ? { vocabularies: { create: data.vocabularies } }
+          : {}),
+      },
+      include: { vocabularies: true },
+    });
+    return NextResponse.json(material);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      return NextResponse.json({ error: "参数无效" }, { status: 400 });
+    }
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "更新失败" },
+      { status: 500 },
+    );
   }
-  const material = await prisma.learningMaterial.update({
-    where: { id },
-    data: {
-      title: data.title,
-      category: data.category,
-      description: data.description,
-      scriptText: data.scriptText,
-      audioPath: data.audioPath,
-      videoPath: data.videoPath,
-      levelTag: data.levelTag,
-      ...(data.vocabularies
-        ? { vocabularies: { create: data.vocabularies } }
-        : {}),
-    },
-    include: { vocabularies: true },
-  });
-  return NextResponse.json(material);
 }
 
 export async function DELETE(
