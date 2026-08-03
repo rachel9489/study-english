@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { uploadMaterialAudio } from "@/lib/upload-material-audio";
 import { MATERIAL_CATEGORIES } from "@/lib/types";
 
 type Vocab = { word: string; meaning: string; phonetic?: string };
@@ -74,29 +75,20 @@ export default function MaterialsPage() {
       .filter((v) => v.word && v.meaning);
   }
 
-  async function uploadAudioFile(file: File) {
-    const fd = new FormData();
-    fd.append("file", file);
-    const res = await fetch("/api/upload", { method: "POST", body: fd });
-    let data: { path?: string; storage?: string; error?: string } = {};
-    try {
-      data = (await res.json()) as typeof data;
-    } catch {
-      throw new Error(`上传失败（HTTP ${res.status}）`);
-    }
-    if (!res.ok || !data.path) {
-      throw new Error(data.error || `上传失败（HTTP ${res.status}）`);
-    }
-    return data;
+  async function uploadAudioFile(file: File, onProgress?: (pct: number) => void) {
+    return uploadMaterialAudio(file, { onProgress });
   }
 
   async function onUpload(file: File | null) {
     if (!file) return;
     setFormUploading(true);
-    showMsg(`正在上传「${file.name}」…`, "info");
+    const mb = (file.size / (1024 * 1024)).toFixed(1);
+    showMsg(`正在上传「${file.name}」（${mb} MB）…`, "info");
     try {
-      const data = await uploadAudioFile(file);
-      setForm((f) => ({ ...f, audioPath: data.path! }));
+      const data = await uploadAudioFile(file, (pct) => {
+        showMsg(`正在上传「${file.name}」（${mb} MB）… ${pct}%`, "info");
+      });
+      setForm((f) => ({ ...f, audioPath: data.path }));
       showMsg(
         data.storage === "blob"
           ? `已上传到云端 Blob（线上可播）：${data.path}`
@@ -113,10 +105,14 @@ export default function MaterialsPage() {
   async function reuploadMaterialAudio(material: Material, file: File | null) {
     if (!file) return;
     setReuploadingId(material.id);
-    showCardMsg(material.id, `正在上传「${file.name}」…`, "info");
-    showMsg(`正在为「${material.title}」上传原音…`, "info");
+    const mb = (file.size / (1024 * 1024)).toFixed(1);
+    showCardMsg(material.id, `正在上传「${file.name}」（${mb} MB）…`, "info");
+    showMsg(`正在为「${material.title}」上传原音（${mb} MB）…`, "info");
     try {
-      const data = await uploadAudioFile(file);
+      const data = await uploadAudioFile(file, (pct) => {
+        showCardMsg(material.id, `正在上传「${file.name}」（${mb} MB）… ${pct}%`, "info");
+        showMsg(`正在为「${material.title}」上传原音… ${pct}%`, "info");
+      });
       const res = await fetch(`/api/materials/${material.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
