@@ -155,10 +155,15 @@ export default function ChildHomePage() {
           </div>
         )}
 
-        {!studyStarted && breakfastPending ? (
+        {!studyStarted ? (
           <div className="mt-4 rounded-2xl bg-[var(--accent-soft)] px-4 py-3 text-sm text-[var(--ink-soft)]">
-            上午 <strong>{DAY_STUDY_START}</strong> 前建议先完成{" "}
-            <strong>早餐巩固</strong>；新任务 {DAY_STUDY_START} 后开始（未做完也可在之后补做）。
+            <strong>预习对话</strong>今天可随时开始
+            {breakfastPending ? (
+              <>
+                ；建议先做完 <strong>早餐巩固</strong>
+              </>
+            ) : null}
+            。其余新任务 <strong>{DAY_STUDY_START}</strong> 后解锁（早餐未做完也可之后补做）。
           </div>
         ) : null}
 
@@ -203,6 +208,7 @@ export default function ChildHomePage() {
                       {task.status === "locked" &&
                       !studyStarted &&
                       task.type !== "BREAKFAST_REVIEW" &&
+                      task.type !== "PREVIEW" &&
                       data.plan?.tasks.some((t) => t.id === task.id)
                         ? ` · ${DAY_STUDY_START} 后开始`
                         : ""}

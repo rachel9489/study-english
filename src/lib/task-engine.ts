@@ -222,10 +222,16 @@ export async function refreshTaskLocks(planId: string) {
       }
     }
 
-    // 当日新计划：10:00 前锁定（早餐巩固在昨日计划里，不受影响）
+    // 预习对话：当日计划上始终可做，不依赖早餐是否完成、也不卡 10:00
+    if (task.type === "PREVIEW" && plan.date === today) {
+      available = true;
+    }
+
+    // 当日其余新任务：10:00 前锁定（早餐巩固在昨日计划里，不受影响）
     if (
       plan.date === today &&
       task.type !== "BREAKFAST_REVIEW" &&
+      task.type !== "PREVIEW" &&
       !isDayStudyStarted() &&
       task.status !== "in_progress"
     ) {

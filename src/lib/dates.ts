@@ -1,26 +1,27 @@
-import { format } from "date-fns";
+import { formatInTimeZone } from "date-fns-tz";
+
+/** App day boundary and unlock clocks use China local time (Vercel is UTC). */
+export const APP_TIMEZONE = "Asia/Shanghai";
 
 export function todayKey(date = new Date()) {
-  return format(date, "yyyy-MM-dd");
+  return formatInTimeZone(date, APP_TIMEZONE, "yyyy-MM-dd");
 }
 
 export function tomorrowKey(date = new Date()) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + 1);
-  return format(d, "yyyy-MM-dd");
+  return addDaysKey(todayKey(date), 1);
 }
 
 export function addDaysKey(dateStr: string, days: number) {
   const d = new Date(dateStr + "T12:00:00");
   d.setDate(d.getDate() + days);
-  return format(d, "yyyy-MM-dd");
+  return formatInTimeZone(d, APP_TIMEZONE, "yyyy-MM-dd");
 }
 
 export function nowTimeKey(date = new Date()) {
-  return format(date, "HH:mm");
+  return formatInTimeZone(date, APP_TIMEZONE, "HH:mm");
 }
 
-/** 当日新任务开始时间（之前只做早餐巩固） */
+/** 当日新任务开始时间（AI课/听力等；预习对话不受此限制） */
 export const DAY_STUDY_START = "10:00";
 
 export function isDayStudyStarted(now = new Date()) {

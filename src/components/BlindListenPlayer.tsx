@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { resolvePlayableAudioPath } from "@/lib/audio-path";
 import { pauseSpeaking, resumeSpeaking, speakEnglish, stopSpeaking } from "@/lib/tts";
 
 function waitAudioEnded(audio: HTMLAudioElement) {
@@ -23,6 +24,38 @@ function waitAudioEnded(audio: HTMLAudioElement) {
     };
     audio.addEventListener("ended", onEnd);
     audio.addEventListener("error", onErr);
+  });
+}
+
+/** Wait until the element can play, or fail if the URL is missing/404. */
+function waitAudioReady(audio: HTMLAudioElement) {
+  return new Promise<void>((resolve, reject) => {
+    if (audio.error) {
+      reject(new Error("音频不可用"));
+      return;
+    }
+    if (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      resolve();
+      return;
+    }
+    const onReady = () => {
+      cleanup();
+      resolve();
+    };
+    const onErr = () => {
+      cleanup();
+      reject(new Error("音频加载失败"));
+    };
+    const cleanup = () => {
+      audio.removeEventListener("canplay", onReady);
+      audio.removeEventListener("loadeddata", onReady);
+      audio.removeEventListener("error", onErr);
+    };
+    audio.addEventListener("canplay", onReady, { once: true });
+    audio.addEventListener("loadeddata", onReady, { once: true });
+    audio.addEventListener("error", onErr, { once: true });
+    // Kick load for paths that haven't started yet
+    audio.load();
   });
 }
 
@@ -57,11 +90,14 @@ export function BlindListenPlayer({
   /** 参与 TTS 本地缓存 key（同一天同材料只合成一次） */
   cacheMaterialId?: string;
 }) {
+  const fileUrl = useMemo(() => resolvePlayableAudioPath(audioPath), [audioPath]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [status, setStatus] = useState<"idle" | "playing" | "paused">("idle");
   const sessionActiveRef = useRef(false);
   const runningRef = useRef(false);
   const playsRef = useRef(completedPlays);
+  /** true when the current round is playing a file URL (not cloud/browser TTS) */
+  const usingFileRef = useRef(false);
 
   useEffect(() => {
     playsRef.current = completedPlays;
@@ -74,6 +110,7 @@ export function BlindListenPlayer({
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
     }
+    usingFileRef.current = false;
     setStatus("idle");
   }
 
@@ -87,13 +124,25 @@ export function BlindListenPlayer({
   }, [controlRef]);
 
   async function playOneRound() {
-    if (audioPath && audioRef.current) {
+    usingFileRef.current = false;
+
+    // 1) DB 里的 material.audioPath（上传原音）优先
+    // 2) 路径为空 / 404 / 播放失败 → 再走云端/浏览器 TTS
+    if (fileUrl && audioRef.current) {
       const audio = audioRef.current;
-      audio.currentTime = 0;
-      setStatus("playing");
-      await audio.play();
-      await waitAudioEnded(audio);
-      return;
+      try {
+        await waitAudioReady(audio);
+        audio.currentTime = 0;
+        setStatus("playing");
+        usingFileRef.current = true;
+        await audio.play();
+        await waitAudioEnded(audio);
+        return;
+      } catch {
+        usingFileRef.current = false;
+        audio.pause();
+        audio.currentTime = 0;
+      }
     }
 
     stopSpeaking();
@@ -136,7 +185,7 @@ export function BlindListenPlayer({
   function handleMainClick() {
     if (completedPlays >= requiredPlays) return;
     if (status === "paused") {
-      if (audioRef.current && audioPath) {
+      if (usingFileRef.current && audioRef.current) {
         void audioRef.current.play();
       } else {
         resumeSpeaking();
@@ -151,7 +200,7 @@ export function BlindListenPlayer({
 
   function handlePauseClick() {
     if (status !== "playing") return;
-    if (audioRef.current && audioPath && !audioRef.current.paused) {
+    if (usingFileRef.current && audioRef.current && !audioRef.current.paused) {
       audioRef.current.pause();
     } else {
       pauseSpeaking();
@@ -172,8 +221,8 @@ export function BlindListenPlayer({
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      {audioPath ? (
-        <audio ref={audioRef} src={audioPath} preload="metadata" />
+      {fileUrl ? (
+        <audio ref={audioRef} src={fileUrl} preload="metadata" />
       ) : null}
       {!finished ? (
         <>
@@ -197,7 +246,7 @@ export function BlindListenPlayer({
       {hint && !finished ? (
         <span className="text-sm text-[var(--ink-soft)]">{hint}</span>
       ) : null}
-      {!hint && !audioPath && !finished ? (
+      {!hint && !fileUrl && !finished ? (
         <span className="text-sm text-[var(--ink-soft)]">未上传全文原音时用英音朗读全文</span>
       ) : null}
     </div>

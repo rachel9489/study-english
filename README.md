@@ -126,10 +126,13 @@ AI_MODEL=qwen-plus
 AI_TRANSCRIBE_MODEL=qwen3-asr-flash
 AI_TTS_MODEL=cosyvoice-v3-flash
 AI_TTS_VOICE=longxiaochun_v3
-AI_AUDIO_ENABLED=true
+# 默认关闭 CosyVoice 以省额度；朗读优先「Blob 原音」，否则浏览器语音
+AI_TTS_ENABLED=false
+AI_TRANSCRIBE_ENABLED=true
+BLOB_READ_WRITE_TOKEN=vercel_blob_xxx
 ```
 
-> CosyVoice TTS 当前主要在华北2（北京）可用。若合成失败，带读会自动回退浏览器语音。
+> 线上请配置 Vercel Blob，并在家长端重新上传音频。`AI_TTS_ENABLED=true` 才会调用 CosyVoice；关闭时自动用浏览器朗读。
 
 ## 脚本
 

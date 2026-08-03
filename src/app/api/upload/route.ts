@@ -6,6 +6,10 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
+function isVercelRuntime() {
+  return process.env.VERCEL === "1" || Boolean(process.env.VERCEL_ENV);
+}
+
 export async function POST(req: Request) {
   const form = await req.formData();
   const file = form.get("file");
@@ -18,7 +22,7 @@ export async function POST(req: Request) {
   const name = `materials/${randomUUID()}${ext}`;
   const contentType = file.type || "application/octet-stream";
 
-  // Production / linked Vercel: store on Blob
+  // Production / linked Vercel: require Blob so audio is publicly reachable
   if (process.env.BLOB_READ_WRITE_TOKEN) {
     const blob = await put(name, bytes, {
       access: "public",
@@ -31,6 +35,16 @@ export async function POST(req: Request) {
       size: file.size,
       storage: "blob",
     });
+  }
+
+  if (isVercelRuntime()) {
+    return NextResponse.json(
+      {
+        error:
+          "线上未配置 BLOB_READ_WRITE_TOKEN。请在 Vercel 创建 Blob 存储并配置该环境变量后重新上传，否则音频无法播放。",
+      },
+      { status: 503 },
+    );
   }
 
   // Local fallback when Blob token is not configured

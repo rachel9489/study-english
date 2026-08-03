@@ -161,8 +161,8 @@ async function transcribeWithOpenAI(file: File | Blob, filename: string) {
 
 export async function transcribeAudio(file: File | Blob, filename = "audio.webm") {
   const cfg = getAiConfig();
-  if (!cfg.enabled || !cfg.audioEnabled) {
-    throw new AiRequestError("AI 音频未启用，无法转写", 503);
+  if (!cfg.enabled || !cfg.transcribeEnabled) {
+    throw new AiRequestError("AI 转写未启用，无法转写", 503);
   }
 
   if (cfg.provider === "bailian") {
@@ -246,8 +246,8 @@ async function synthesizeWithOpenAI(text: string, opts?: { voice?: string; speed
 
 export async function synthesizeSpeech(text: string, opts?: { voice?: string; speed?: number }) {
   const cfg = getAiConfig();
-  if (!cfg.enabled || !cfg.audioEnabled) {
-    throw new AiRequestError("AI 音频未启用，无法合成语音", 503);
+  if (!cfg.enabled || !cfg.ttsEnabled) {
+    throw new AiRequestError("云端 TTS 未启用，请使用浏览器朗读或上传原音", 503);
   }
 
   if (cfg.provider === "bailian") {

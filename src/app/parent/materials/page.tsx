@@ -52,15 +52,48 @@ export default function MaterialsPage() {
       .filter((v) => v.word && v.meaning);
   }
 
-  async function onUpload(file: File | null) {
-    if (!file) return;
+  async function uploadAudioFile(file: File) {
     const fd = new FormData();
     fd.append("file", file);
     const res = await fetch("/api/upload", { method: "POST", body: fd });
-    const data = await res.json();
-    if (data.path) {
-      setForm((f) => ({ ...f, audioPath: data.path }));
-      setMsg(`已上传音频：${data.path}`);
+    const data = (await res.json()) as { path?: string; storage?: string; error?: string };
+    if (!res.ok || !data.path) {
+      throw new Error(data.error || "上传失败");
+    }
+    return data;
+  }
+
+  async function onUpload(file: File | null) {
+    if (!file) return;
+    setMsg("");
+    try {
+      const data = await uploadAudioFile(file);
+      setForm((f) => ({ ...f, audioPath: data.path! }));
+      setMsg(
+        data.storage === "blob"
+          ? `已上传到云端 Blob（线上可播）：${data.path}`
+          : `已上传到本机（仅本地可播）：${data.path}`,
+      );
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "上传失败");
+    }
+  }
+
+  async function reuploadMaterialAudio(materialId: string, file: File | null) {
+    if (!file) return;
+    setMsg("");
+    try {
+      const data = await uploadAudioFile(file);
+      const res = await fetch(`/api/materials/${materialId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ audioPath: data.path }),
+      });
+      if (!res.ok) throw new Error("保存音频路径失败");
+      setMsg(`已更新「${materialId.slice(0, 6)}…」音频为云端地址`);
+      await load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "更新音频失败");
     }
   }
 
@@ -148,13 +181,20 @@ export default function MaterialsPage() {
             onChange={(e) => setForm({ ...form, vocabText: e.target.value })}
           />
           <div>
-            <label className="mb-2 block text-sm text-[var(--ink-soft)]">音频文件（可选）</label>
+            <label className="mb-2 block text-sm text-[var(--ink-soft)]">
+              音频文件（可选，推荐上传原音以节省 CosyVoice 额度）
+            </label>
             <input
               type="file"
               accept="audio/*"
               onChange={(e) => void onUpload(e.target.files?.[0] ?? null)}
             />
-            {form.audioPath ? <p className="mt-2 text-sm">{form.audioPath}</p> : null}
+            {form.audioPath ? <p className="mt-2 text-sm break-all">{form.audioPath}</p> : null}
+            {form.audioPath?.startsWith("/uploads/") ? (
+              <p className="mt-1 text-sm text-[var(--ink-soft)]">
+                这是本机路径，线上无法播放。请在 Vercel 配置 Blob 后重新上传。
+              </p>
+            ) : null}
           </div>
           <button className="btn btn-primary" disabled={saving}>
             {saving ? "保存中…" : "保存资料"}
@@ -174,6 +214,13 @@ export default function MaterialsPage() {
                   <p className="mt-1 text-sm text-[var(--ink-soft)]">
                     {m.category} · {m.levelTag || "未标阶段"} · 生词 {m.vocabularies.length}
                   </p>
+                  <p className="mt-1 text-sm text-[var(--ink-soft)]">
+                    {m.audioPath?.startsWith("http")
+                      ? "原音：云端可播"
+                      : m.audioPath?.startsWith("/uploads/")
+                        ? "原音：本机路径（线上无效，请重传）"
+                        : "原音：未上传（将用浏览器朗读）"}
+                  </p>
                 </div>
                 <button type="button" className="btn btn-ghost" onClick={() => void remove(m.id)}>
                   删除
@@ -182,6 +229,18 @@ export default function MaterialsPage() {
               <p className="mt-3 line-clamp-3 whitespace-pre-wrap text-sm text-[var(--ink-soft)]">
                 {m.scriptText}
               </p>
+              <label className="mt-3 inline-flex cursor-pointer items-center gap-2 text-sm text-[var(--brand-deep)]">
+                <span className="btn btn-ghost">重新上传原音</span>
+                <input
+                  type="file"
+                  accept="audio/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    void reuploadMaterialAudio(m.id, e.target.files?.[0] ?? null);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
             </article>
           ))}
           {!list.length && <p className="text-[var(--ink-soft)]">还没有资料，先上传一份对话。</p>}

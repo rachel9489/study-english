@@ -11,7 +11,12 @@ export type AiConfig = {
   transcribeModel: string;
   ttsModel: string;
   ttsVoice: string;
+  /** @deprecated use ttsEnabled / transcribeEnabled */
   audioEnabled: boolean;
+  /** CosyVoice / OpenAI TTS — expensive; default off, use browser speech + uploaded audio */
+  ttsEnabled: boolean;
+  /** Cloud ASR for follow-along recording */
+  transcribeEnabled: boolean;
 };
 
 function flag(name: string, fallback: boolean) {
@@ -57,6 +62,24 @@ export function getAiConfig(): AiConfig {
           ttsVoice: "nova",
         };
 
+  // Prefer explicit flags. AI_AUDIO_ENABLED is legacy master only when specifics are unset.
+  // Defaults: TTS OFF (save CosyVoice); ASR ON when AI is configured.
+  const ttsExplicit = process.env.AI_TTS_ENABLED !== undefined;
+  const asrExplicit = process.env.AI_TRANSCRIBE_ENABLED !== undefined;
+  const masterSet = process.env.AI_AUDIO_ENABLED !== undefined;
+
+  const ttsEnabled = ttsExplicit
+    ? flag("AI_TTS_ENABLED", false)
+    : masterSet
+      ? flag("AI_AUDIO_ENABLED", false)
+      : false;
+
+  const transcribeEnabled = asrExplicit
+    ? flag("AI_TRANSCRIBE_ENABLED", enabled)
+    : masterSet
+      ? flag("AI_AUDIO_ENABLED", false)
+      : enabled;
+
   return {
     enabled,
     provider,
@@ -67,7 +90,9 @@ export function getAiConfig(): AiConfig {
     transcribeModel: process.env.AI_TRANSCRIBE_MODEL || defaults.transcribeModel,
     ttsModel: process.env.AI_TTS_MODEL || defaults.ttsModel,
     ttsVoice: process.env.AI_TTS_VOICE || defaults.ttsVoice,
-    audioEnabled: flag("AI_AUDIO_ENABLED", enabled),
+    ttsEnabled,
+    transcribeEnabled,
+    audioEnabled: ttsEnabled || transcribeEnabled,
   };
 }
 
@@ -78,10 +103,10 @@ export function getPublicAiStatus() {
     provider: cfg.enabled ? cfg.provider : "local",
     baseUrl: cfg.enabled ? cfg.baseUrl : "local",
     model: cfg.enabled ? cfg.model : "local-rules",
-    transcribeModel: cfg.enabled && cfg.audioEnabled ? cfg.transcribeModel : null,
-    ttsModel: cfg.enabled && cfg.audioEnabled ? cfg.ttsModel : null,
-    ttsVoice: cfg.enabled && cfg.audioEnabled ? cfg.ttsVoice : null,
-    transcribe: cfg.enabled && cfg.audioEnabled,
-    tts: cfg.enabled && cfg.audioEnabled,
+    transcribeModel: cfg.enabled && cfg.transcribeEnabled ? cfg.transcribeModel : null,
+    ttsModel: cfg.enabled && cfg.ttsEnabled ? cfg.ttsModel : null,
+    ttsVoice: cfg.enabled && cfg.ttsEnabled ? cfg.ttsVoice : null,
+    transcribe: cfg.enabled && cfg.transcribeEnabled,
+    tts: cfg.enabled && cfg.ttsEnabled,
   };
 }
